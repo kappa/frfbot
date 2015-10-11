@@ -1,0 +1,47 @@
+=head1 DESCRIPTION
+
+This is FrfBot, a L<Telegram|https://telegram.org> bot that posts
+to L<FreeFeed|https://freefeed.net>.
+
+It runs the actual bot available at
+L<https://telegram.me/freefeed_bot>.
+
+=head1 INSTALLATION
+
+The bot runs as an HTTP daemon behind nginx which provides HTTPS.
+I use L<Ubic|https://github.com/berekuk/Ubic> as a service manager and
+provide an example conf/ubic-service file that may be used to run the
+daemon. The nginx-site.conf to be included from the main nginx.conf is
+also provided.
+
+The deployment script I use is included in the form of Rexfile, a
+tasks file for L<Rex|http://rexify.org>. It performs all the
+templating, package and Perl module installations needed. Generally,
+it will bring an empty modern Ubuntu box to a working FrfBot machine
+in several minutes.
+
+You may need to change some variables at the top of the file.
+
+You will also need to provide SSL certificate and private key pair.
+Self-signed certificates are ok, see some
+L<instructions from Telegram|https://core.telegram.org/bots/self-signed>.
+
+To register the bot with Telegram, you will need to talk to
+L<the BotFather|https://telegram.me/BotFather> and get the token for
+the conf/frfbot.conf file from him.
+
+=head1 BUGS AND FEATURE REQUESTS
+
+Bug reports are welcome via L<Github issues|https://github.com/kappa/frfbot/issues>.
+
+=head1 LICENSE
+
+This is free software; you can redistribute it and/or modify it under
+the terms GNU Affero General Public License version 3.
+
+Please, be aware that you cannot run a modified version of this bot as
+a public Telegram bot without publishing your modifications.
+
+=head1 AUTHOR
+
+Copyright (c) 2015 Alex Kapranoff, <alex@kapranoff.ru>.
