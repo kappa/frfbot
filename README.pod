@@ -14,6 +14,8 @@ provide an example conf/ubic-service file that may be used to run the
 daemon. The nginx-site.conf to be included from the main nginx.conf is
 also provided.
 
+Redis is used as a storage for auth credentials.
+
 The deployment script I use is included in the form of Rexfile, a
 tasks file for L<Rex|http://rexify.org>. It performs all the
 templating, package and Perl module installations needed. Generally,
