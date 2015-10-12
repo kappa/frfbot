@@ -1,20 +1,20 @@
 use Rex -feature => ['1.3'];
 
-# Telegram bots are web applications that
-# respond to HTTP requests from Telegram servers.
-# This is the hostname part of the URL that is also used
-# to configure nginx.
+# this file contains real test/stage/live environments
+require("Rexfile.local");
 
-set host_name => 'your-web.example.com';
+environment example => sub {
+    set host_name => 'frfbot.example.com';
 
-# You may keep the defauls for these two.
-set daemon_port => 8046;
-set account => 'frfbot';
+    set daemon_port => 8046;
+    set account => 'frfbot';
+};
 
-group bot_servers => get 'host_name';
-
-my $root_dir = '/site/' . get 'host_name';
+my $host_name = get 'host_name';
+my $root_dir = "/site/$host_name";
 my $account = get 'account';
+
+group bot_servers => $host_name;
 
 use Rex::Lang::Perl::Cpanm;
 task "prepare", group => "bot_servers", sub {
@@ -39,7 +39,7 @@ task "prepare", group => "bot_servers", sub {
 	pkg [qw/nginx libxml2-dev zlib1g-dev redis-server/],
 		ensure	=> 'present';
 
-	symlink "$root_dir/conf/nginx-site.conf", '/etc/nginx/sites-enabled/frfbot-site.conf';
+	symlink "$root_dir/conf/nginx-site.conf", "/etc/nginx/sites-enabled/$host_name.conf";
 
 	file "$root_dir/daemon/cpanfile",
 		source	=> 'cpanfile',
@@ -53,7 +53,7 @@ task "prepare", group => "bot_servers", sub {
 		unless 'test -d /etc/ubic/service';
 	chmod 1777, '/var/lib/ubic';
 
-	symlink "$root_dir/conf/ubic-service", '/etc/ubic/service/frfbot';
+	symlink "$root_dir/conf/ubic-service", "/etc/ubic/service/$account";
 };
 
 task "deploy", group => "bot_servers", sub {
@@ -74,18 +74,11 @@ task "deploy", group => "bot_servers", sub {
 	file "$root_dir/conf/ubic-service",
 		content	=> template("conf/ubic-service.tmpl");
 
-	file "$root_dir/daemon/frfbot.pl",
-		source	=> "src/frfbot.pl";
-	file "$root_dir/daemon/reg_hook.pl",
-		source => "src/reg_hook.pl";
-	file "$root_dir/daemon/Handlers.pm",
-		source => "src/Handlers.pm";
-
-	do_task "start";
+    needs main "code";
 };
 
 task "start", group => "bot_servers", sub {
-	run "ubic restart frfbot";
+	run "ubic restart $account";
 
 	service "redis",
 		ensure	=> "started";

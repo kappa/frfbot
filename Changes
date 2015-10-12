@@ -1,0 +1,8 @@
+Revision history for FrfBot Telegram bot.
+See https://github.com/kappa/frfbot
+
+1.1
+    - refactor Rexfile, now we have environments
+
+1.0 2015-10-11
+    - original version
