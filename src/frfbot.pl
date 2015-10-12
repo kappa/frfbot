@@ -57,7 +57,10 @@ any '*w' => { w => '' } => sub {
 	shift->render(text => 'yok');
 };
 
-helper redis => sub { shift->stash->{redis} ||= Mojo::Redis2->new; };
+helper redis => sub {
+	shift->stash->{redis}
+		||= Mojo::Redis2->new(url => app->config->{redis_url});
+};
 
 app->secrets(app->config->{secrets}) if app->config->{secrets};
 app->start;
