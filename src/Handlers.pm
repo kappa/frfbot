@@ -63,7 +63,7 @@ sub state_login_start {
 	my $chat_id = $message->{chat}->{id};
 
 	if ($text =~ /^[a-z0-9_]+$/ && length($text) < 50) {
-		say_simple($c, $chat_id, "Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Как его получить, написано в первых комментах вот по этой ссылке: https://m.freefeed.net/kkapp/7c041202-a5da-4bee-beee-19a7b9d19352");
+		say_simple($c, $chat_id, qq{Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Его можно узнать на странице https://freefeed.net/settings, предварительно включив опцию "Enable BetterFeed"});
 		$link->{state} = 'login_have_user';
 		$link->{user} = $text;
 		$c->redis->set($chat_id, encode_json($link));
