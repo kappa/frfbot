@@ -5,6 +5,7 @@ See https://github.com/kappa/frfbot
     - refactor Rexfile, now we have environments
     - link to a better way of obtaining the token
     - autogenerate https certs on deploy (needed for staging)
+    - integrate botan.io, no personal info shared
 
 1.0 2015-10-11
     - original version

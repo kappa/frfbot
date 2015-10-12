@@ -6,6 +6,7 @@ use Exporter 'import';
 our @EXPORT = qw/handle_bot_update/;
 
 use Mojo::JSON qw/encode_json decode_json/;
+use Mojo::Util qw/url_escape/;
 
 # states;
 # logged_off, logged_in
@@ -39,6 +40,28 @@ sub handle_bot_update {
 	&$state_handler($c, $message, $link);
 }
 
+sub botan_report {
+	my ($c, $event) = @_;
+
+	return unless $c->config->{appmetrika_token};
+
+	my $message = $c->req->json->{message};
+
+	my $tx = $c->ua->post("https://api.botan.io/track"
+			. "?token=" . $c->config->{appmetrika_token}
+			. "&uid=" . ($c->config->{appmetrika_uid_mask} ^ (0+$message->{from}->{id}))
+			. "&name=" . url_escape($event)
+		=> json
+		=> {}
+		=> sub {
+			my ($ua, $tx) = @_;
+			if ($tx->res->json->{status} ne 'accepted') {
+				$c->app->log->debug("[handle] botanIO resp: " . $tx->res->to_string);
+			}
+		}
+	);
+}
+
 sub state_logged_off {
 	my ($c, $message, $link) = @_;
 
@@ -54,6 +77,8 @@ sub state_logged_off {
 	else {
 		say_simple($c, $chat_id, "Привет! Сначала сюда нужно подключить ваш аккаунт во FreeFeed. Это нужно сделать всего один раз, и вам точно будет удобнее не с телефона, а на компьютере, например через веб-интерфейс https://web.telegram.org. Чтобы начать подключение, используйте команду /login.");
 	}
+
+	botan_report($c, 'before_login');
 }
 
 sub state_login_start {
@@ -84,6 +109,7 @@ sub state_login_have_user {
 		$link->{state} = 'logged_in';
 		$link->{token} = $text;
 		$c->redis->set($chat_id, encode_json($link));
+		botan_report($c, 'login');
 	}
 	else {
 		say_simple($c, $chat_id, "Не очень похоже на токен. Попробуйте ещё раз.");
@@ -102,6 +128,7 @@ sub state_logged_in {
 		delete $link->{user};
 		$c->redis->set($chat_id, encode_json($link));
 		say_simple($c, $chat_id, "Забываю ваш токен... Вот, уже всё забыл.");
+		botan_report($c, 'logout');
 	}
 	elsif (length($text) > 10000) {
 		say_simple($c, $chat_id, "Очень длинно, не надо так.");
@@ -126,6 +153,7 @@ sub state_logged_in {
 						my ($ua, $tx) = @_;
 						$c->app->log->debug("[handle] sendMSG w/ reply callback: " . $tx->res->to_string);
 					});
+					botan_report($c, 'message');
 				}
 				else {
 					$c->botapi->sendMessage({
@@ -137,10 +165,10 @@ sub state_logged_in {
 						my ($ua, $tx) = @_;
 						$c->app->log->debug("[handle] sendMSG w/ reply callback: " . $tx->res->to_string);
 					});
+					botan_report($c, 'message_error');
 				}
 			},
 		);
-
 	}
 }
 
