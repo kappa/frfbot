@@ -89,8 +89,6 @@ task "start", group => "bot_servers", sub {
 task "code", group => "bot_servers", sub {
 	file "$root_dir/daemon/frfbot.pl",
 		source => "src/frfbot.pl";
-	file "$root_dir/daemon/reg_hook.pl",
-		source => "src/reg_hook.pl";
 	file "$root_dir/daemon/Handlers.pm",
 		source => "src/Handlers.pm";
 
