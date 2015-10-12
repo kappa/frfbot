@@ -52,7 +52,7 @@ get '/setwh' => sub {
 	});
 };
 
-any '/*' => sub {
+any '*w' => { w => '' } => sub {
 	shift->render(text => 'yok');
 };
 
