@@ -60,12 +60,8 @@ task "deploy", group => "bot_servers", sub {
 	file "$root_dir/www/index.html",
 		content	=> "Dünya merhaba!";
 
-	# generate these XXX
-	file "$root_dir/conf/https_priv.key",
-		source	=> "conf/https_priv.key",
-		mode	=> 600;
-	file "$root_dir/conf/https_public_cert.pem",
-		source	=> "conf/https_public_cert.pem";
+    run "openssl req -newkey rsa:2048 -sha256 -nodes -keyout $root_dir/conf/https_priv.key -x509 -days 365 -out $root_dir/conf/https_public_cert.pem -subj '/C=US/ST=New York/L=Brooklyn/O=Example Brooklyn Company/CN=$host_name'";
+    chmod 600, "$root_dir/conf/https_priv.key";
 
 	file "$root_dir/conf/frfbot.conf",
 		content	=> template("conf/frfbot.conf.tmpl");
