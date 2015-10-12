@@ -49,6 +49,7 @@ get '/setwh' => sub {
 	}, sub {
 		my ($ua, $tx) = @_;
 		app->log->debug("setWH callback: " . $tx->res->to_string);
+		$c->render(text => $tx->res->to_string);
 	});
 };
 
