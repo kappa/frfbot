@@ -14,15 +14,18 @@ use Mojo::Util qw/url_escape/;
 # posting
 
 sub say_simple {
-	my ($c, $chat_id, $text) = @_;
+	my ($c, $chat_id, $text, %options) = @_;
 
 	$c->botapi->sendMessage({
 		chat_id		=> $chat_id,
 		text		=> $text,
+		($options{force_reply}
+			? (reply_markup => '{"force_reply":true}')	# API requires JSON str here!
+			: ()),
 	},
 	sub {
 		my ($ua, $tx) = @_;
-		$c->app->log->debug("[handle] say_simple succesful");
+		$c->app->log->debug("[handle] say_simple succesful: " . $tx->res->to_string);
 	});
 }
 
@@ -71,7 +74,7 @@ sub state_logged_off {
 	my $chat_id = $message->{chat}->{id};
 
 	if ($message->{text} eq '/login') {
-		say_simple($c, $chat_id, "Отлично, давайте начнём. Сначала скажите мне свой логин во FreeFeed.");
+		say_simple($c, $chat_id, "Отлично, давайте начнём. Сначала скажите мне свой логин во FreeFeed.", force_reply => 1);
 		$link->{state} = 'login_start';
 		$c->app->log->debug("[handle] state_logged_off before saving state for $chat_id, obj = " . encode_json($link));
 		$c->redis->set($chat_id => encode_json($link));
@@ -91,13 +94,13 @@ sub state_login_start {
 	my $chat_id = $message->{chat}->{id};
 
 	if ($text =~ /^[a-z0-9_]+$/ && length($text) < 50) {
-		say_simple($c, $chat_id, qq{Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Его можно узнать на странице https://freefeed.net/settings с помощью ссылки "show access token", предварительно включив опцию "Enable BetterFeed".});
+		say_simple($c, $chat_id, qq{Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Его можно узнать на странице https://freefeed.net/settings с помощью ссылки "show access token", предварительно включив опцию "Enable BetterFeed".}, force_reply => 1);
 		$link->{state} = 'login_have_user';
 		$link->{user} = $text;
 		$c->redis->set($chat_id, encode_json($link));
 	}
 	else {
-		say_simple($c, $chat_id, "Не очень похоже на логин. Попробуйте ещё разок.");
+		say_simple($c, $chat_id, "Не очень похоже на логин. Попробуйте ещё разок.", force_reply => 1);
 	}
 }
 
@@ -115,7 +118,7 @@ sub state_login_have_user {
 		botan_report($c, $message, 'login');
 	}
 	else {
-		say_simple($c, $chat_id, "Не очень похоже на токен. Попробуйте ещё раз.");
+		say_simple($c, $chat_id, "Не очень похоже на токен. Попробуйте ещё раз.", force_reply => 1);
 	}
 }
 

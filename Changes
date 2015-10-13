@@ -1,7 +1,11 @@
 Revision history for FrfBot Telegram bot.
 See https://github.com/kappa/frfbot
 
-1.1
+1.2
+    - simple /to with parameters
+    - force_reply when needed (controversial)
+
+1.1 2015-10-12
     - refactor Rexfile, now we have environments
     - link to a better way of obtaining the token
     - autogenerate https certs on deploy (needed for staging)
