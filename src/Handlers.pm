@@ -133,6 +133,17 @@ sub state_logged_in {
 		say_simple($c, $chat_id, "Забываю ваш токен... Вот, уже всё забыл.");
 		botan_report($c, $message, 'logout');
 	}
+	elsif ($text =~ /^\/to\s*(?<dest>.*)$/) {
+		if (!$+{dest}) {
+			say_simple($c, $chat_id, "Команда /to без параметров пока не работает.");
+		}
+		else {
+			$link->{to} = [ split /[, ]+/, $+{dest} ];
+			$c->redis->set($chat_id, encode_json($link));
+			say_simple($c, $chat_id, "Следующее сообщение будет отправлено в: " . join(', ', @{$link->{to}}));
+		}
+		botan_report($c, $message, 'to');
+	}
 	elsif (length($text) > 10000) {
 		say_simple($c, $chat_id, "Очень длинно, не надо так.");
 	}
@@ -142,15 +153,22 @@ sub state_logged_in {
 			=> json
 			=> {
 				post => { body	=> $text },
-				meta => { feeds => $link->{user} },
+				meta => { feeds => $link->{to} || $link->{user} },
 			}
 			=> sub {
 				my ($ua, $tx) = @_;
 				if ($tx->res->code == 200 && (my $post_id = $tx->res->json->{posts}->{id})) {
+					my $url_group = $link->{user};
+					if ($link->{to}) {
+						$url_group = $link->{to}->[0];
+						delete $link->{to};
+						$c->redis->set($chat_id, encode_json($link));
+					}
+
 					$c->botapi->sendMessage({
 						chat_id		=> $chat_id,
 						reply_to_message_id => $message->{message_id},
-						text		=> "Готово, смотрите в https://m.freefeed.net/$link->{user}/$post_id",
+						text		=> "Готово, смотрите в https://m.freefeed.net/$url_group/$post_id",
 					},
 					sub {
 						my ($ua, $tx) = @_;
