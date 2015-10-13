@@ -274,12 +274,18 @@ sub state_logged_in {
 		say_simple($c, $chat_id, "Забываю ваш токен... Вот, уже всё забыл.");
 		botan_report($c, $message, 'logout');
 	}
-	elsif ($text =~ /^\/to\s*(?<dest>.*)$/) {
+	elsif ($text =~ /^\/to(?<plus>\+?)\s*(?<dest>.*)$/) {
 		if (!$+{dest}) {
 			say_simple($c, $chat_id, "Команда /to без параметров пока не работает.");
 		}
 		else {
-			$link->{to} = [ split /[, ]+/, $+{dest} ];
+			if ($+{plus}) {
+				$link->{to} //= [ $link->{user} ];
+				push @{$link->{to}}, split(/[, ]+/, $+{dest});
+			}
+			else {
+				$link->{to} = [ split(/[, ]+/, $+{dest}) ];
+			}
 			$c->redis->set($chat_id, encode_json($link));
 			say_simple($c, $chat_id, "Следующее сообщение будет отправлено в: " . join(', ', @{$link->{to}}));
 		}
