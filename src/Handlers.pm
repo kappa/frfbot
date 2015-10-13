@@ -59,7 +59,7 @@ sub botan_report {
 			$c->app->log->debug("[botan] botanIO req: " . $tx->req->to_string);
 			$c->app->log->debug("[botan] botanIO resp: " . $tx->res->to_string);
 			if ($tx->res->json->{status} ne 'accepted') {
-				$c->app->log->debug("[botan] botanIO resp: " . $tx->res->to_string);
+				$c->app->log->debug("[botan] botanIO ERROR: " . $tx->res->to_string);
 			}
 		}
 	);
@@ -154,7 +154,7 @@ sub state_logged_in {
 					},
 					sub {
 						my ($ua, $tx) = @_;
-						$c->app->log->debug("[handle] sendMSG w/ reply callback: " . $tx->res->to_string);
+						$c->app->log->debug("[handle] sendMSG w/ reply success");
 					});
 					botan_report($c, $message, 'message');
 				}
@@ -166,7 +166,7 @@ sub state_logged_in {
 					},
 					sub {
 						my ($ua, $tx) = @_;
-						$c->app->log->debug("[handle] sendMSG w/ reply callback: " . $tx->res->to_string);
+						$c->app->log->debug("[handle] sendMSG w/ reply ERROR: " . $tx->res->to_string);
 					});
 					botan_report($c, $message, 'message_error');
 				}
