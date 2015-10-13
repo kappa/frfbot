@@ -28,6 +28,13 @@ To register the bot with Telegram, you will need to talk to
 L<the BotFather|https://telegram.me/BotFather> and get the token for
 the conf/frfbot.conf file from him.
 
+The bot has integration with
+L<Yandex Appmetrica for bots|http://botan.io>.
+It never reports to Appmetrica any personal information and
+all the user identifiers are hashed so that they may not be
+correlated with the users of other bots. See appmetrica_* variables in
+conf/frfbot.conf.
+
 =head1 BUGS AND FEATURE REQUESTS
 
 Bug reports are welcome via L<Github issues|https://github.com/kappa/frfbot/issues>.

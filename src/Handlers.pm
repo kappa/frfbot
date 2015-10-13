@@ -43,12 +43,12 @@ sub handle_bot_update {
 sub botan_report {
 	my ($c, $message, $event) = @_;
 
-	return unless $c->config->{appmetrika_token};
+	return unless $c->config->{appmetrica_token};
 
 	$c->app->log->debug("[botan] event $event");
 	my $tx = $c->ua->post("https://api.botan.io/track"
-			. "?token=" . $c->config->{appmetrika_token}
-			. "&uid=" . ($c->config->{appmetrika_uid_mask} ^ (0+$message->{from}->{id}))
+			. "?token=" . $c->config->{appmetrica_token}
+			. "&uid=" . ($c->config->{appmetrica_uid_mask} ^ (0+$message->{from}->{id}))
 			. "&name=" . url_escape($event)
 		=> json
 		=> {
