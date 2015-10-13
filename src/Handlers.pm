@@ -237,12 +237,12 @@ sub conjure_text {
 	}
 
 	if ($message->{voice}) {
-		$file = $file->{voice};
+		$file = $message->{voice};
 		return 'voice ' . $file->{duration} . 's';
 	}
 
 	if ($message->{audio}) {
-		$file = $file->{audio};
+		$file = $message->{audio};
 		return ($file->{performer} ? "$file->{performer} - " : '')
 			. ($file->{title} // 'Audio Track')
 			. ' ' . $file->{duration} . 's'
@@ -263,7 +263,7 @@ sub conjure_text {
 sub state_logged_in {
 	my ($c, $message, $link) = @_;
 
-	my $text = $message->{text};
+	my $text = $message->{text} // '';
 	my $chat_id = $message->{chat}->{id};
 
 	if ($text =~ /^\/logout$/) {
@@ -306,7 +306,7 @@ sub state_logged_in {
 				my @attachments = @_;
 				$c->app->log->debug("[files] files prepared: " . encode_json(\@attachments));
 
-				$text //= conjure_text($message);
+				$text = $text ne '' ? $text : conjure_text($message);
 
 				my $tx = $c->ua->post('https://freefeed.net/v1/posts'
 					=> { 'X-Authentication-Token' => $link->{token} }
