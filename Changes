@@ -4,6 +4,8 @@ See https://github.com/kappa/frfbot
 1.2
     - simple /to with parameters
     - force_reply when needed (controversial)
+    - support attachments of types
+        photo, voice, audio, video, sticker, document
 
 1.1 2015-10-12
     - refactor Rexfile, now we have environments
