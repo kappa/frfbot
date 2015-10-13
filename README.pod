@@ -24,10 +24,6 @@ in several minutes.
 
 You may need to change some variables at the top of the file.
 
-You will also need to provide SSL certificate and private key pair.
-Self-signed certificates are ok, see some
-L<instructions from Telegram|https://core.telegram.org/bots/self-signed>.
-
 To register the bot with Telegram, you will need to talk to
 L<the BotFather|https://telegram.me/BotFather> and get the token for
 the conf/frfbot.conf file from him.
