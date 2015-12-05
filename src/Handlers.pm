@@ -51,6 +51,11 @@ sub handle_bot_update {
 	my $link = $c->redis->get($message->{chat}->{id});
 	$link = $link ? decode_json($link) : { state => 'logged_off' };
 
+	if ($link->{state} eq 'logged_in') {
+		$link->{state} = 'ready_to_post';
+		$c->redis->set($message->{chat}->{id}, encode_json($link));
+	}
+
 	$c->app->log->debug("[handle] for $message->{chat}->{id} found " . encode_json($link));
 
 	# dispatch on command and state
