@@ -12,9 +12,17 @@ use Mojo::Util qw/url_escape/;
 use Mojo::IOLoop;
 
 # states;
-# logged_off, logged_in
+# logged_off (no services)
+# ready_to_post
 # login_start, login_have_user
-# posting
+# mokum_start, mokum_have_user
+
+# todo:
+# in_post
+
+my $DISPATCH = {
+	'logout'	=> qr/.*/,
+};
 
 sub say_simple {
 	my ($c, $chat_id, $text, %options) = @_;
@@ -42,8 +50,42 @@ sub handle_bot_update {
 
 	$c->app->log->debug("[handle] for $message->{chat}->{id} found " . encode_json($link));
 
+	# dispatch on command and state
+	if ($message->{text} =~ m{^ /(?<command>\S+)}x) {
+		my $command = $+{command};
+		$c->app->log->debug("[handle] dispatching command: $command");
+		if ($DISPATCH->{$command}) {
+			if ($link->{state} =~ $DISPATCH->{$command}) {
+				my $command_handler = \&{"command_$command"};
+				return &$command_handler($c, $message, $link);
+			}
+			else {
+				say_simple($c, $message->{chat}->{id}, "Эта команда здесь не работает, попробуйте ещё раз.", force_reply => 1);
+			}
+		}
+		else {
+			# XXX unknown command, implement after filling dispatch
+			# table to 100%
+		}
+	}
+
+	# if still unhandled, then dispatch on state alone
 	my $state_handler = \&{"state_$link->{state}"};
 	&$state_handler($c, $message, $link);
+}
+
+sub command_logout {
+	my ($c, $message, $link) = @_;
+
+	my $chat_id = $message->{chat}->{id};
+
+	$link->{state} = 'logged_off';
+	delete @{$link}{qw/token user mokum_user mokum_token/};
+
+	$c->redis->set($chat_id, encode_json($link));
+	say_simple($c, $chat_id, "Забываю все ваши токены... Вот, уже забыл.");
+
+	botan_report($c, $message, 'logout');
 }
 
 sub botan_report {
@@ -266,15 +308,7 @@ sub state_logged_in {
 	my $text = $message->{text} // '';
 	my $chat_id = $message->{chat}->{id};
 
-	if ($text =~ /^\/logout$/) {
-		$link->{state} = 'logged_off';
-		delete $link->{token};
-		delete $link->{user};
-		$c->redis->set($chat_id, encode_json($link));
-		say_simple($c, $chat_id, "Забываю ваш токен... Вот, уже всё забыл.");
-		botan_report($c, $message, 'logout');
-	}
-	elsif ($text =~ /^\/to(?<plus>\+?)\s*(?<dest>.*)$/) {
+	if ($text =~ /^\/to(?<plus>\+?)\s*(?<dest>.*)$/) {
 		if (!$+{dest}) {
 			say_simple($c, $chat_id, "Команда /to без параметров пока не работает.");
 		}
