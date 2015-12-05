@@ -21,8 +21,10 @@ use Mojo::IOLoop;
 # in_post
 
 my $DISPATCH = {
-	'logout'	=> qr/.*/,
-	'mokum'		=> qr/^(logged_off|ready_to_post)$/,
+	logout		=> qr/.*/,
+	mokum		=> qr/^(logged_off|ready_to_post)$/,
+	login		=> qr/^(logged_off|ready_to_post)$/,
+	freefeed	=> qr/^(logged_off|ready_to_post)$/,
 };
 
 sub say_simple {
@@ -100,6 +102,22 @@ sub command_mokum {
 	$c->app->log->debug("[handle] command_mokum processed for $chat_id, link = " . encode_json($link));
 }
 
+sub command_login {
+	# backwards compatibility
+	goto &command_freefeed;
+}
+
+sub command_freefeed {
+	my ($c, $message, $link) = @_;
+
+	my $chat_id = $message->{chat}->{id};
+
+	say_simple($c, $chat_id, "Отлично, давайте начнём. Сначала скажите мне свой логин во FreeFeed.", force_reply => 1);
+	$link->{state} = 'login_start';
+	$c->redis->set($chat_id => encode_json($link));
+	$c->app->log->debug("[handle] command_login processed for $chat_id, link = " . encode_json($link));
+}
+
 sub state_mokum_start {
 	my ($c, $message, $link) = @_;
 
@@ -165,16 +183,7 @@ sub state_logged_off {
 
 	my $chat_id = $message->{chat}->{id};
 
-	if ($message->{text} eq '/login') {
-		say_simple($c, $chat_id, "Отлично, давайте начнём. Сначала скажите мне свой логин во FreeFeed.", force_reply => 1);
-		$link->{state} = 'login_start';
-		$c->app->log->debug("[handle] state_logged_off before saving state for $chat_id, obj = " . encode_json($link));
-		$c->redis->set($chat_id => encode_json($link));
-		$c->app->log->debug("[handle] state_logged_off after saving state");
-	}
-	else {
-		say_simple($c, $chat_id, "Привет! Сначала сюда нужно подключить ваш аккаунт во FreeFeed. Это нужно сделать всего один раз, и вам точно будет удобнее не с телефона, а на компьютере, например через веб-интерфейс https://web.telegram.org. Чтобы начать подключение, используйте команду /login.");
-	}
+	say_simple($c, $chat_id, "Привет! Сначала сюда нужно подключить ваш аккаунт во FreeFeed и/или Mokum. Это делается всего один раз, и вам точно будет удобнее не с телефона, а на компьютере, например через веб-интерфейс https://web.telegram.org. Для подключения соответствующих сервисов используйте команды /freefeed или /mokum.");
 
 	botan_report($c, $message, 'before_login');
 }
