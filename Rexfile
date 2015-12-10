@@ -64,6 +64,7 @@ task "deploy", group => "bot_servers", sub {
     chmod 600, "$root_dir/conf/https_priv.key";
 
 	file "$root_dir/conf/frfbot.conf",
+	    no_overwrite => TRUE,
 		content	=> template("conf/frfbot.conf.tmpl");
 	file "$root_dir/conf/nginx-site.conf",
 		content	=> template("conf/nginx-site.conf.tmpl");
