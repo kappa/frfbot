@@ -12,5 +12,6 @@ my $service = Ubic::Service::SimpleDaemon->new(
 	env => {
 		MOJO_LISTEN => 'http://127.0.0.1:<%= $::daemon_port %>',
 		MOJO_REVERSE_PROXY => 1,
+		MOJO_HOME => $root_dir,
 	},
 );
