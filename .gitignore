@@ -1,3 +1,4 @@
 Rexfile.local
 conf/frfbot.conf
 local/*
+log/*
