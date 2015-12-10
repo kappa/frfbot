@@ -22,7 +22,7 @@ sub set_webhook {
     }
 
     $self->botapi->setWebhook({
-        url			=> $self->app->config->{webhook_url_start} . $webhook_uri,
+        url			=> $self->config->{webhook_url_start} . $self->config->{webhook_uri},
         certificate	=> {
             file	=> 'conf/https_public_cert.pem',
         },

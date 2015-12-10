@@ -22,13 +22,12 @@ sub startup {
         state $redis = Mojo::Redis2->new(url => $self->config->{redis_url});
     });
 
-    my $webhook_uri = '/bot-' . $self->config->{telegram_bot_token};
-
+    $self->config->{webhook_uri} = '/bot-' . $self->config->{telegram_bot_token};
 
     my $r = $self->routes;
     # ============================================================
     $r->get('/setwh')     ->to('telegram#set_webhook');
-    $r->post($webhook_uri)->to('telegram#handle');
+    $r->post($self->config->{webhook_uri})->to('telegram#handle');
 
     $r->get('/status'           => sub { shift->render(text => 'İyiyim') });
     $r->any('*w' => { w => '' } => sub { shift->render(text => 'yok') });
