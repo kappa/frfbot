@@ -1,7 +1,7 @@
 package FrfBot;
 use Mojo::Base 'Mojolicious';
 
-our $VERSION = '1.2';
+our $VERSION = '1.4';
 
 use WWW::Telegram::BotAPI;
 use Mojo::Redis2;
