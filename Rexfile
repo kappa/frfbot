@@ -31,7 +31,7 @@ task "prepare", group => "bot_servers", sub {
 		home			=> "/home/$account",
 		ssh_key			=> $ssh_key;
 
-	file [map "$root_dir/$_", qw/www conf daemon log/],
+	file [map "$root_dir/$_", qw{www conf daemon daemon/lib log}],
 		ensure	=> 'directory',
 		owner	=> $account,
 		group	=> $account;
@@ -84,9 +84,11 @@ task "start", group => "bot_servers", sub {
 
 task "code", group => "bot_servers", sub {
 	file "$root_dir/daemon/frfbot.pl",
-		source => "src/frfbot.pl";
-	file "$root_dir/daemon/Handlers.pm",
-		source => "src/Handlers.pm";
+		source => "script/frfbot.pl";
+	file "$root_dir/daemon/lib/FrfBot.pm",
+		source => "lib/FrfBot.pm";
+	file "$root_dir/daemon/lib/Handlers.pm",
+		source => "lib/Handlers.pm";
 
 	do_task "start";
 };

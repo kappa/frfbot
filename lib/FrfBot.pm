@@ -11,7 +11,7 @@ use Handlers;
 sub startup {
     my $self = shift;
 
-    $self->plugin('Config' => { file => './conf/frfbot.conf' });
+    $self->plugin('Config' => { file => '../conf/frfbot.conf' });
     $self->secrets($self->config->{secrets}) if $self->config->{secrets};
 
     $self->helper(botapi => sub {
