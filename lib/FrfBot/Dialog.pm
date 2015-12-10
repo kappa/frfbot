@@ -1,4 +1,4 @@
-package Handlers;
+package FrfBot::Dialog;
 use utf8;
 use strict;
 use warnings;

@@ -88,8 +88,8 @@ task "code", group => "bot_servers", sub {
 		source => "script/frfbot.pl";
 	file "$root_dir/lib/FrfBot.pm",
 		source => "lib/FrfBot.pm";
-	file "$root_dir/lib/Handlers.pm",
-		source => "lib/Handlers.pm";
+	file "$root_dir/lib/FrfBot/Dialog.pm",
+		source => "lib/FrfBot/Dialog.pm";
 	file "$root_dir/lib/FrfBot/Controller/Telegram.pm",
 		source => "lib/FrfBot/Controller/Telegram.pm";
 

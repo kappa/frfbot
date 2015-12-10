@@ -1,7 +1,7 @@
 package FrfBot::Controller::Telegram;
 use Mojo::Base 'Mojolicious::Controller';
 
-use Handlers;
+use FrfBot::Dialog;
 
 sub handle {
     my $self = shift;
