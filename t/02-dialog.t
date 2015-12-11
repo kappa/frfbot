@@ -9,12 +9,7 @@ use FrfBot::Test;
 
 my $t = get_test_frfbot();
 
-$t->get_ok('/')
-    ->content_is('yok')
-    ->status_is(200);
-
-$t->get_ok('/status')
-    ->content_is('İyiyim')
+send_to_bot($t, 'takoe')
     ->status_is(200);
 
 done_testing;
