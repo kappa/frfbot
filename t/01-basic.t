@@ -2,10 +2,7 @@
 use Test::More;
 use Test::Mojo;
 
-use FindBin;
-require "$FindBin::Bin/../src/frfbot.pl";
-
-my $t = Test::Mojo->new;
+my $t = Test::Mojo->new('FrfBot');
 
 $t->get_ok('/')
     ->status_is(200);
