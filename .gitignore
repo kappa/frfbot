@@ -2,3 +2,4 @@ Rexfile.local
 conf/frfbot.conf
 local/*
 log/*
+cover_db
