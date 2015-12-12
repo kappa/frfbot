@@ -12,5 +12,6 @@ on 'develop' => sub {
 	requires 'Rex';
 	requires 'Expect';
 	requires 'Test::MockObject';
+	requires 'Test::Mock::Redis';
 	requires 'IO::All';
 }
