@@ -9,7 +9,7 @@ use FrfBot::Test;
 
 my $t = get_test_frfbot();
 
-send_to_bot($t, 'takoe')
-    ->status_is(200);
+send_to_bot($t, 'takoe');
+like(bot_sent($t), qr/Сначала сюда нужно подключить/);
 
 done_testing;

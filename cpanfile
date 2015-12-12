@@ -11,4 +11,6 @@ requires 'Mojo::Redis2';
 on 'develop' => sub {
 	requires 'Rex';
 	requires 'Expect';
+	requires 'Test::MockObject';
+	requires 'IO::All';
 }
