@@ -3,13 +3,12 @@ use utf8;
 use strict;
 use warnings;
 
-use Exporter 'import';
-
-our @EXPORT = qw/handle_bot_update/;
-
 use Mojo::JSON qw/encode_json decode_json/;
 use Mojo::Util qw/url_escape/;
 use Mojo::IOLoop;
+
+use Moo;
+use namespace::clean;
 
 # states;
 # logged_off (no services)
@@ -27,84 +26,108 @@ my $DISPATCH = {
 	freefeed	=> qr/^(logged_off|ready_to_post)$/,
 };
 
-sub say_simple {
-	my ($c, $chat_id, $text, %options) = @_;
+has c => (
+	is => 'ro',
+	required => 1,
+);
 
-	$c->botapi->sendMessage({
-		chat_id		=> $chat_id,
+has storage => (
+	is => 'rw',
+	lazy => 1,
+	builder => sub {
+		my $obj = $_[0]->c->redis->get($_[0]->chat_id);
+		return $obj ? decode_json($obj) : { state => 'logged_off' };
+	},
+);
+
+has _botapi => (
+	is => 'ro',
+	lazy => 1,
+	builder => sub { $_[0]->c->botapi },
+	handles => {
+		botapi_send => 'sendMessage',
+		botapi_file => 'getFile',
+	},
+);
+
+has _log => (
+	is => 'ro',
+	lazy => 1,
+	builder => { $_[0]->c->app->log },
+	handles => ['debug'],
+);
+
+sub chat_id { $_[0]->message->{chat}->{id} };
+sub message { $_[0]->c->req->json->{message} };
+sub text { $_[0]->message->{text} };
+sub state { $_[0]->storage->{state} };
+
+sub update_state {
+	my ($self, $new_state) = @_;
+	$self->state = $new_state if $new_state;
+
+	$self->c->redis->set($self->chat_id, encode_json($self->storage));
+}
+
+sub say_simple {
+	my ($self, $text, %options) = @_;
+
+	$self->botapi_send({
+		chat_id		=> $self->chat_id,
 		text		=> $text,
 		($options{force_reply}
 			? (reply_markup => '{"force_reply":true}')	# API requires JSON str here!
 			: ()),
-	},
-	sub {
-		my ($ua, $tx) = @_;
-		$c->app->log->debug("[handle] say_simple succesful: " . $tx->res->to_string);
 	});
 }
 
-sub handle_bot_update {
-	my $c = shift;
+sub handle_update {
+	my $self = shift;
 
-	my $message = $c->req->json->{message};
-
-	my $link = $c->redis->get($message->{chat}->{id});
-	$link = $link ? decode_json($link) : { state => 'logged_off' };
-
-	if ($link->{state} eq 'logged_in') {
-		$link->{state} = 'ready_to_post';
-		$c->redis->set($message->{chat}->{id}, encode_json($link));
+	# upgrade from old scheme
+	if ($self->state eq 'logged_in') {
+		$self->update_state('ready_to_post');
 	}
 
-	$c->app->log->debug("[handle] for $message->{chat}->{id} found " . encode_json($link));
+	$self->debug('chat: ' . $self->chat_id . ' stored: ' . encode_json($self->storage));
 
 	# dispatch on command and state
-	if ($message->{text} =~ m{^ /(?<command>\S+)}x) {
+	if ($self->text =~ m{^ /(?<command>\S+)}x) {
 		my $command = $+{command};
-		$c->app->log->debug("[handle] dispatching command: $command");
-		if ($DISPATCH->{$command}) {
-			if ($link->{state} =~ $DISPATCH->{$command}) {
-				my $command_handler = \&{"command_$command"};
-				return &$command_handler($c, $message, $link);
-			}
-			else {
-				say_simple($c, $message->{chat}->{id}, "Эта команда здесь не работает, попробуйте ещё раз.", force_reply => 1);
-			}
+		$self->debug("dispatching command: $command");
+		if ($DISPATCH->{$command} && $self->state =~ $DISPATCH->{$command}) {
+			my $command_handler = \&{"command_$command"};
+			return $self->$command_handler();
 		}
 		else {
-			# XXX unknown command, implement after filling dispatch
-			# table to 100%
+			$self->say_simple('Неверная команда.');
+			return;
 		}
 	}
-
-	# if still unhandled, then dispatch on state alone
-	my $state_handler = \&{"state_$link->{state}"};
-	&$state_handler($c, $message, $link);
+	else {
+		# no command found
+		$self->state_ready_to_post();
+	}
 }
 
 sub command_logout {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $chat_id = $message->{chat}->{id};
+	delete @{$self->storage}{qw/token user mokum_user mokum_token/};
+	$self->update_state('logged_off');
 
-	$link->{state} = 'logged_off';
-	delete @{$link}{qw/token user mokum_user mokum_token/};
+	$self->say_simple('Забываю все ваши токены... Вот, уже забыл.');
 
-	$c->redis->set($chat_id, encode_json($link));
-	say_simple($c, $chat_id, "Забываю все ваши токены... Вот, уже забыл.");
-
-	botan_report($c, $message, 'logout');
+	$self->botan_report('logout');
 }
 
 sub command_mokum {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $chat_id = $message->{chat}->{id};
+	$self->say_simple('Отлично, давайте начнём. Сначала скажите мне свой логин в Mokum.', force_reply => 1);
+	$self->update_state('mokum_start');
 
-	say_simple($c, $chat_id, "Отлично, давайте начнём. Сначала скажите мне свой логин в Mokum.", force_reply => 1);
-	$link->{state} = 'mokum_start';
-	$c->redis->set($chat_id => encode_json($link));
-	$c->app->log->debug("[handle] command_mokum processed for $chat_id, link = " . encode_json($link));
+	$self->debug('command_mokum processed for ' . $self->chat_id . ' storage = ' . encode_json($self->storage));
 }
 
 sub command_login {
@@ -113,136 +136,125 @@ sub command_login {
 }
 
 sub command_freefeed {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $chat_id = $message->{chat}->{id};
+	$self->say_simple('Отлично, давайте начнём. Сначала скажите мне свой логин во FreeFeed.', force_reply => 1);
+	$self->update_state('login_start');
 
-	say_simple($c, $chat_id, "Отлично, давайте начнём. Сначала скажите мне свой логин во FreeFeed.", force_reply => 1);
-	$link->{state} = 'login_start';
-	$c->redis->set($chat_id => encode_json($link));
-	$c->app->log->debug("[handle] command_login processed for $chat_id, link = " . encode_json($link));
+	$self->debug('command_login processed for ' . $self->chat_id . ' storage = ' . encode_json($self->storage));
 }
 
 sub state_mokum_start {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $text = $message->{text};
-	my $chat_id = $message->{chat}->{id};
-
+	my $text = $self->text;
 	if ($text =~ /^[a-z0-9_]+$/ && length($text) < 50) {
-		say_simple($c, $chat_id, qq{Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Его можно создать на странице https://mokum.place/settings/apitokens.}, force_reply => 1);
-		$link->{state} = 'mokum_have_user';
-		$link->{mokum_user} = $text;
-		$c->redis->set($chat_id, encode_json($link));
+		$self->say_simple(qq{Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Его можно создать на странице https://mokum.place/settings/apitokens.}, force_reply => 1);
+		$self->storage->{mokum_user} = $text;
+		$self->update_state('mokum_have_user');
 	}
 	else {
-		say_simple($c, $chat_id, "Не очень похоже на логин. Попробуйте ещё разок.", force_reply => 1);
+		$self->say_simple('Не очень похоже на логин. Попробуйте ещё разок.', force_reply => 1);
 	}
 }
 
 sub state_mokum_have_user {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $text = $message->{text};
-	my $chat_id = $message->{chat}->{id};
+	my $text = $self->text;
 
 	if ($text =~ /^[a-f0-9-]+$/ && length($text) < 100) {
-		say_simple($c, $chat_id, "Круто. Для проверки напишите какой-нибудь пост.");
-		$link->{state} = 'ready_to_post';
-		$link->{mokum_token} = $text;
-		$c->redis->set($chat_id, encode_json($link));
-		botan_report($c, $message, 'mokum');
+		$self->say_simple('Круто. Для проверки напишите какой-нибудь пост.');
+		$self->storage->{mokum_token} = $text;
+		$self->update_state('ready_to_post');
+
+		$self->botan_report('mokum');
 	}
 	else {
-		say_simple($c, $chat_id, "Не очень похоже на токен. Попробуйте ещё раз.", force_reply => 1);
+		$self->say_simple('Не очень похоже на токен. Попробуйте ещё раз.', force_reply => 1);
 	}
 }
 
 sub botan_report {
-	my ($c, $message, $event) = @_;
+	my ($self, $event) = @_;
 
-	return unless $c->config->{appmetrica_token};
+	return unless $self->c->config->{appmetrica_token};
 
-	$c->app->log->debug("[botan] event $event");
-	my $tx = $c->ua->post("https://api.botan.io/track"
-			. "?token=" . $c->config->{appmetrica_token}
-			. "&uid=" . ($c->config->{appmetrica_uid_mask} ^ (0+$message->{from}->{id}))
+	$self->debug("[botan] event $event");
+	my $tx = $self->c->ua->post("https://api.botan.io/track"
+			. "?token=" . $self->c->config->{appmetrica_token}
+			. "&uid=" . ($self->c->config->{appmetrica_uid_mask} ^ (0+$self->message->{from}->{id}))
 			. "&name=" . url_escape($event)
 		=> json
 		=> {
-			message_id => $message->{message_id},
+			message_id => $self->message->{message_id},
 		}
 		=> sub {
 			my ($ua, $tx) = @_;
-			$c->app->log->debug("[botan] botanIO req: " . $tx->req->to_string);
-			$c->app->log->debug("[botan] botanIO resp: " . $tx->res->to_string);
+			$self->debug("[botan] botanIO req: " . $tx->req->to_string);
 			if ($tx->res->json->{status} ne 'accepted') {
-				$c->app->log->debug("[botan] botanIO ERROR: " . $tx->res->to_string);
+				$self->debug("[botan] botanIO ERROR: " . $tx->res->to_string);
 			}
 		}
 	);
 }
 
 sub state_logged_off {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $chat_id = $message->{chat}->{id};
+	$self->say_simple('Привет! Сначала сюда нужно подключить ваш аккаунт во FreeFeed и/или Mokum. Это делается всего один раз, и вам точно будет удобнее не с телефона, а на компьютере, например через веб-интерфейс https://web.telegram.org или с помощью десктопного клиента Telegram. Для подключения соответствующих сервисов используйте команды /freefeed или /mokum.');
 
-	say_simple($c, $chat_id, "Привет! Сначала сюда нужно подключить ваш аккаунт во FreeFeed и/или Mokum. Это делается всего один раз, и вам точно будет удобнее не с телефона, а на компьютере, например через веб-интерфейс https://web.telegram.org. Для подключения соответствующих сервисов используйте команды /freefeed или /mokum.");
-
-	botan_report($c, $message, 'before_login');
+	$self->botan_report('before_login');
 }
 
 sub state_login_start {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $text = $message->{text};
-	my $chat_id = $message->{chat}->{id};
+	my $text = $self->text;
 
 	if ($text =~ /^[a-z0-9_]+$/ && length($text) < 50) {
-		say_simple($c, $chat_id, qq{Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Его можно узнать на странице https://freefeed.net/settings с помощью ссылки "show access token", предварительно включив опцию "Enable BetterFeed".}, force_reply => 1);
-		$link->{state} = 'login_have_user';
-		$link->{user} = $text;
-		$c->redis->set($chat_id, encode_json($link));
+		$self->say_simple(qq{Очень хорошо, $text. Теперь сложный, зато последний шаг. Скопируйте сюда свой секретный токен. Его можно узнать на странице https://freefeed.net/settings с помощью ссылки "show access token", предварительно включив опцию "Enable BetterFeed".}, force_reply => 1);
+		$self->storage->{user} = $text;
+		$self->update_state('login_have_user');
 	}
 	else {
-		say_simple($c, $chat_id, "Не очень похоже на логин. Попробуйте ещё разок.", force_reply => 1);
+		$self->say_simple('Не очень похоже на логин. Попробуйте ещё разок.', force_reply => 1);
 	}
 }
 
 sub state_login_have_user {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $text = $message->{text};
-	my $chat_id = $message->{chat}->{id};
+	my $text = $self->text;
 
 	if ($text =~ /^[.a-zA-Z0-9_-]+$/ && length($text) < 500) {
-		say_simple($c, $chat_id, "Круто. Для проверки напишите какой-нибудь пост.");
-		$link->{state} = 'ready_to_post';
-		$link->{token} = $text;
-		$c->redis->set($chat_id, encode_json($link));
-		botan_report($c, $message, 'login');
+		$self->say_simple('Круто. Для проверки напишите какой-нибудь пост.');
+		$self->storage->{token} = $text;
+		$self->update_state('ready_to_post');
+
+		$self->botan_report('login');
 	}
 	else {
-		say_simple($c, $chat_id, "Не очень похоже на токен. Попробуйте ещё раз.", force_reply => 1);
+		$self->say_simple('Не очень похоже на токен. Попробуйте ещё раз.', force_reply => 1);
 	}
 }
 
 sub upload_attachment {
-	my ($c, $link, $get_file, $file_name, $cb) = @_;
+	my $self = shift;
+	my ($get_file, $file_name, $cb) = @_;
 	my $att_id;
 
 	my $get_url = 'https://api.telegram.org/file/bot'
-		. $c->config->{telegram_bot_token}
+		. $self->c->config->{telegram_bot_token}
 		. "/$get_file->{file_path}";
 
-	$c->app->log->debug("[files] downloading: " . $get_url);
+	$self->debug("[files] downloading: " . $get_url);
 
-	my $get_tx = $c->ua->get($get_url);
+	my $get_tx = $self->c->ua->get($get_url);
 	if ($get_tx->success) {
-		$c->app->log->debug("[files] uploading");
-		my $post_tx = $c->ua->post('https://freefeed.net/v1/attachments'
-			=> { 'X-Authentication-Token' => $link->{token} }
+		$self->debug("[files] uploading");
+		my $post_tx = $self->c->ua->post('https://freefeed.net/v1/attachments'
+			=> { 'X-Authentication-Token' => $self->storage->{token} }
 			=> form
 			=>
 			{
@@ -255,32 +267,32 @@ sub upload_attachment {
 			}
 		);
 		if ($post_tx->success) {
-			$c->app->log->debug("[files] successful upload: " . $post_tx->res->to_string);
-			$c->app->log->debug("[files] successful upload req was: " . $post_tx->req->to_string);
+			$self->debug("[files] successful upload: " . $post_tx->res->to_string);
+			$self->debug("[files] successful upload req was: " . $post_tx->req->to_string);
 			$att_id = $post_tx->res->json->{attachments}->{id};
 		}
 		else {
-			$c->app->log->debug("[files] uploading FAILED: " .  $post_tx->res->to_string);
+			$self->debug("[files] uploading FAILED: " .  $post_tx->res->to_string);
 		}
 	}
 	else {
-		$c->app->log->debug("[files] download FAILED: " . $get_tx->res->to_string);
+		$self->debug("[files] download FAILED: " . $get_tx->res->to_string);
 	}
 	$cb->($att_id);
 }
 
 sub prepare_files {
-	my ($c, $message, $link, $cb) = @_;
+	my ($self, $cb) = @_;
 
 	my @rv;
 	my @files;
 
-	if (my $photos = $message->{photo}) {
+	if (my $photos = $self->message->{photo}) {
 		push @files, [$photos->[-1]->{file_id}, undef];
 	}
 
 	foreach my $type (qw/voice audio sticker document video/) {
-		if (my $file = $message->{$type}) {
+		if (my $file = $self->message->{$type}) {
 			push @files, [$file->{file_id}, $file->{file_name}];
 		}
 	}
@@ -290,7 +302,7 @@ sub prepare_files {
 		return;
 	};
 
-	$c->app->log->debug("[files] found files: " . encode_json(\@files));
+	$self->debug("[files] found files: " . encode_json(\@files));
 
 	Mojo::IOLoop->delay(
 		sub {
@@ -298,16 +310,16 @@ sub prepare_files {
 			foreach my $file (@files) {
 				my $end = $delay->begin(0);
 
-				$c->botapi->getFile({
+				$self->botapi_file({
 					file_id => $file->[0],
 				}, sub {
 					my ($ua, $tx) = @_;
 
 					if ($tx->success && $tx->res->json->{ok}) {
-						upload_attachment($c, $link, $tx->res->json->{result}, $file->[1], $end);
+						$self->upload_attachment($tx->res->json->{result}, $file->[1], $end);
 					}
 					else {
-						$c->app->log->debug("[files] getFile error: " .  $tx->res->to_string);
+						$self->debug("[files] getFile error: " .  $tx->res->to_string);
 						$end->();
 					}
 				});
@@ -315,7 +327,7 @@ sub prepare_files {
 		},
 		sub {
 			my $delay = shift;
-			$c->app->log->debug("[files] rv ready, calling cb: " . encode_json(\@_));
+			$self->debug("[files] rv ready, calling cb: " . encode_json(\@_));
 			$cb->(@_);
 		}
 	);
@@ -364,59 +376,60 @@ sub conjure_text {
 }
 
 sub state_ready_to_post {
-	my ($c, $message, $link) = @_;
+	my $self = shift;
 
-	my $text = $message->{text} // '';
-	my $chat_id = $message->{chat}->{id};
+	my $text = $self->text // '';
 
 	if ($text =~ /^\/to(?<plus>\+?)\s*(?<dest>.*)$/) {
 		if (!$+{dest}) {
-			say_simple($c, $chat_id, "Команда /to без параметров пока не работает.");
+			$self->say_simple('Команда /to без параметров пока не работает.');
 		}
 		else {
 			if ($+{plus}) {
-				$link->{to} //= [ $link->{user} ];
-				push @{$link->{to}}, split(/[, ]+/, $+{dest});
+				$self->storage->{to} //= [ $self->storage->{user} ];
+				push @{$self->storage->{to}}, split(/[, ]+/, $+{dest});
 			}
 			else {
-				$link->{to} = [ split(/[, ]+/, $+{dest}) ];
+				$self->storage->{to} = [ split(/[, ]+/, $+{dest}) ];
 			}
-			$c->redis->set($chat_id, encode_json($link));
-			say_simple($c, $chat_id, "Следующее сообщение будет отправлено в: " . join(', ', @{$link->{to}}));
+			$self->update_state();
+
+			$self->say_simple('Следующее сообщение будет отправлено в: ' . join(', ', @{$self->storage->{to}}));
 		}
-		botan_report($c, $message, 'to');
+
+		$self->botan_report('to');
 	}
 	elsif (length($text) > 10000) {
-		say_simple($c, $chat_id, "Очень длинно, не надо так.");
+		$self->say_simple('Очень длинно, не надо так.');
 	}
 	else {
-		if ($link->{token}) {
-			post_to_freefeed($c, $message, $link, $text, $chat_id);
+		if ($self->storage->{token}) {
+			$self->_post_to_freefeed();
 		}
-		if ($link->{mokum_token}) {
-			post_to_mokum($c, $message, $link, $text, $chat_id);
+		if ($self->storage->{mokum_token}) {
+			$self->_post_to_mokum();
 		}
 	}
 }
 
-sub post_to_freefeed {
-	my ($c, $message, $link, $text, $chat_id) = @_;
+sub _post_to_freefeed {
+	my $self = shift;
 
 	Mojo::IOLoop->delay(
 		sub {
 			my $delay = shift;
-			prepare_files($c, $message, $link, $delay->begin(0));
+			$self->_prepare_files($delay->begin(0));
 		},
 		sub {
 			my $delay = shift;
 
 			my @attachments = @_;
-			$c->app->log->debug("[files] files prepared: " . encode_json(\@attachments));
+			$self->debug("[files] files prepared: " . encode_json(\@attachments));
 
-			$text = $text ne '' ? $text : conjure_text($message);
+			my $text = $self->text ne '' ? $self->text : conjure_text($self->message);
 
-			my $tx = $c->ua->post('https://freefeed.net/v1/posts'
-				=> { 'X-Authentication-Token' => $link->{token} }
+			my $tx = $self->c->ua->post('https://freefeed.net/v1/posts'
+				=> { 'X-Authentication-Token' => $self->storage->{token} }
 				=> json
 				=> {
 					post => {
@@ -426,37 +439,37 @@ sub post_to_freefeed {
 							: ()
 						),
 					},
-					meta => { feeds => $link->{to} || $link->{user} },
+					meta => { feeds => $self->storage->{to} || $self->storage->{user} },
 				}
 				=> sub {
 					my ($ua, $tx) = @_;
 					if ($tx->res->code == 200 && (my $post_id = $tx->res->json->{posts}->{id})) {
-						my $url_group = $link->{user};
-						if ($link->{to}) {
-							$url_group = $link->{to}->[0];
-							delete $link->{to};
-							$c->redis->set($chat_id, encode_json($link));
+						my $url_group = $self->storage->{user};
+						if ($self->storage->{to}) {
+							$url_group = $self->storage->{to}->[0];
+							delete $self->storage->{to};
+							$self->update_state();
 						}
 
-						$c->botapi->sendMessage({
-							chat_id		=> $chat_id,
-							reply_to_message_id => $message->{message_id},
+						$self->botapi_send({
+							chat_id		=> $self->chat_id,
+							reply_to_message_id => $self->message->{message_id},
 							text		=> "Готово, смотрите в https://m.freefeed.net/$url_group/$post_id",
 						},
 						sub {
 							my ($ua, $tx) = @_;
-							$c->app->log->debug("[handle] sendMSG w/ reply success");
+							$self->debug("[handle] sendMSG w/ reply success");
 						});
-						botan_report($c, $message, 'message');
+						$self->botan_report('message');
 					}
 					else {
-						$c->app->log->debug("[handle] post error: " . $tx->res->to_string);
-						$c->app->log->debug("[handle] req was: " . $tx->req->to_string);
-						botan_report($c, $message, 'message_error');
+						$self->debug("[handle] post error: " . $tx->res->to_string);
+						$self->debug("[handle] req was: " . $tx->req->to_string);
+						$self->botan_report('message_error');
 
-						$c->botapi->sendMessage({
-							chat_id		=> $chat_id,
-							reply_to_message_id => $message->{message_id},
+						$self->botapi_send({
+							chat_id		=> $self->chat_id,
+							reply_to_message_id => $self->message->{message_id},
 							text		=> "Что-то пошло не так, я не смог это запостить",
 						}, sub { });
 					}
@@ -468,44 +481,44 @@ sub post_to_freefeed {
 
 
 sub post_to_mokum {
-	my ($c, $message, $link, $text, $chat_id) = @_;
+	my $self = shift;
 
-	my $tx = $c->ua->post('https://mokum.place/api/v1/posts.json'
-		=> { 'X-API-Token' => $link->{mokum_token} }
+	my $tx = $self->c->ua->post('https://mokum.place/api/v1/posts.json'
+		=> { 'X-API-Token' => $self->storage->{mokum_token} }
 		=> json
 		=> {
 			post => {
-				text		=> $text,
+				text		=> $self->text,
 				timelines	=> [ 'user' ],
 			},
 		}
 		=> sub {
 			my ($ua, $tx) = @_;
 			if ($tx->res->code == 200 && (my $post_id = $tx->res->json->{post}->{id})) {
-				my $url_group = $link->{mokum_user};
+				my $url_group = $self->storage->{mokum_user};
 
-				delete $link->{to};
-				$c->redis->set($chat_id, encode_json($link));
+				delete $self->storage->{to};
+				$self->update_state();
 
-				$c->botapi->sendMessage({
-					chat_id		=> $chat_id,
-					reply_to_message_id => $message->{message_id},
+				$self->botapi_send({
+					chat_id		=> $self->chat_id,
+					reply_to_message_id => $self->message->{message_id},
 					text		=> "Готово, смотрите в https://mokum.place/$url_group/$post_id",
 				},
 				sub {
 					my ($ua, $tx) = @_;
-					$c->app->log->debug("[handle] sendMSG w/ reply success");
+					$self->debug("[handle] sendMSG w/ reply success");
 				});
-				botan_report($c, $message, 'message');
+				$self->botan_report('message');
 			}
 			else {
-				$c->app->log->debug("[handle] post error: " . $tx->res->to_string);
-				$c->app->log->debug("[handle] req was: " . $tx->req->to_string);
-				botan_report($c, $message, 'message_error');
+				$self->debug("[handle] post error: " . $tx->res->to_string);
+				$self->debug("[handle] req was: " . $tx->req->to_string);
+				$self->botan_report('message_error');
 
-				$c->botapi->sendMessage({
-					chat_id		=> $chat_id,
-					reply_to_message_id => $message->{message_id},
+				$self->botapi_send({
+					chat_id		=> $self->chat_id,
+					reply_to_message_id => $self->message->{message_id},
 					text		=> "Что-то пошло не так, я не смог это запостить в Mokum",
 				}, sub { });
 			}
@@ -514,4 +527,3 @@ sub post_to_mokum {
 }
 
 1;
-
